@@ -3314,7 +3314,7 @@ impl Client {
                     participants.len(),
                     map.len()
                 );
-                group_info = Arc::new(GroupRoutingInfo::with_lid_to_pn_map(
+                group_info = std::sync::Arc::new(GroupRoutingInfo::with_lid_to_pn_map(
                     participants,
                     AddressingMode::Pn,
                     map,
