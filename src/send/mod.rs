@@ -3280,10 +3280,46 @@ impl Client {
         let node = {
             // No send-level lock: encrypt_group_message serializes the
             // sender-key chain advance per (group, sender) at the cipher.
-            let group_info = self
+            let mut group_info = self
                 .groups()
                 .routing_info_with_freshness(&to, group_metadata_freshness)
                 .await?;
+
+            // DIAGNOSTIC ONLY (gated by env var): force PN addressing for one group.
+            // The server rejects this group's LID-addressed stanza with NACK 421.
+            if std::env::var_os("WA_FORCE_PN_KIPAS").is_some()
+                && to.user.as_str() == "120363431048197201"
+            {
+                use std::collections::HashMap;
+                use wacore::client::context::GroupRoutingInfo;
+                let mut map: HashMap<wacore_binary::CompactString, Jid> = HashMap::new();
+                for p in group_info.participants.iter() {
+                    if let Some(pn) = group_info.phone_jid_for_lid_user(&p.user) {
+                        map.insert(p.user.clone(), pn.clone());
+                    }
+                }
+                let participants = group_info
+                    .participants
+                    .iter()
+                    .map(|p| {
+                        group_info
+                            .phone_jid_for_lid_user(&p.user)
+                            .cloned()
+                            .unwrap_or_else(|| p.clone())
+                    })
+                    .collect::<Vec<_>>();
+                log::warn!(
+                    "DIAG forcing PN addressing for {} ({} participants, {} mapped)",
+                    to,
+                    participants.len(),
+                    map.len()
+                );
+                group_info = Arc::new(GroupRoutingInfo::with_lid_to_pn_map(
+                    participants,
+                    AddressingMode::Pn,
+                    map,
+                ));
+            }
 
             // Borrow from the held snapshot: no field clones, the Arc keeps it alive.
             let device_snapshot = self.persistence_manager.get_device_snapshot();
